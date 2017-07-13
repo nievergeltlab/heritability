@@ -1,0 +1,8 @@
+  for chr in {1..22}
+  do
+  /home/cnieverg/meta_istss/generic-metal/metal  plink_meta/fem_norel_20pct_chr"$chr".metal_in
+  /home/cnieverg/meta_istss/generic-metal/metal  plink_meta/all_norel_20pct_chr"$chr".metal_in
+  /home/cnieverg/meta_istss/generic-metal/metal  plink_meta/mal_norel_20pct_chr"$chr".metal_in
+  
+  
+  done

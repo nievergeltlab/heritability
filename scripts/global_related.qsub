@@ -1,0 +1,11 @@
+#!/bin/bash
+#PBS -V
+
+plinkl=/home/cnieverg/gctam/plink
+
+$plinkl --bfile /home/cnieverg/gctam/grm/pruned_alldata --thin-count 50000 --genome --min 0.05 --out /home/cnieverg/gctam/grm/pruned_alldata_related05 --parallel 1 6 
+$plinkl --bfile /home/cnieverg/gctam/grm/pruned_alldata --thin-count 50000 --genome --min 0.05 --out /home/cnieverg/gctam/grm/pruned_alldata_related05 --parallel 2 6 
+$plinkl --bfile /home/cnieverg/gctam/grm/pruned_alldata --thin-count 50000 --genome --min 0.05 --out /home/cnieverg/gctam/grm/pruned_alldata_related05 --parallel 3 6 
+$plinkl --bfile /home/cnieverg/gctam/grm/pruned_alldata --thin-count 50000 --genome --min 0.05 --out /home/cnieverg/gctam/grm/pruned_alldata_related05 --parallel 4 6 
+$plinkl --bfile /home/cnieverg/gctam/grm/pruned_alldata --thin-count 50000 --genome --min 0.05 --out /home/cnieverg/gctam/grm/pruned_alldata_related05 --parallel 5 6 
+$plinkl --bfile /home/cnieverg/gctam/grm/pruned_alldata --thin-count 50000 --genome --min 0.05 --out /home/cnieverg/gctam/grm/pruned_alldata_related05 --parallel 6 6 

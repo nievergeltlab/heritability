@@ -1,0 +1,12 @@
+#!/bin/bash
+#PBS -V
+
+ldak=/home/cnieverg/gctam/ldak5.linux.fast
+
+
+#List all pruned kinship matrices
+#ls prune_*.grm.bin | sed 's/.grm.bin//g' > pruned_grm.list
+
+
+#Get first 20 PCs
+$ldak --pca pruned_kinship_20pct --grm pruned_kinship --axes 20 --keep mds_covfiles/eur_gwas.subjects

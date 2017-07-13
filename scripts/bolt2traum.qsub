@@ -1,0 +1,13 @@
+#!/bin/bash
+#PBS -V
+
+
+cp  /home/cnieverg/gctam/grm/pruned_alldata_norel.* "$TMPDIR"/.
+
+cd "$TMPDIR"
+/home/cnieverg/gctam/bolt --bfile pruned_alldata_norel --phenoFile /home/cnieverg/gctam/traumatized.pheno --phenoCol Pheno_fix  --reml --remlNoRefine > /home/cnieverg/gctam/boltres/boltmodel_fastreml_norel_traumatized.txt
+
+
+
+
+#--covarFile /home/cnieverg/gctam/ss_fixed.pheno2.txt --covarCol Study

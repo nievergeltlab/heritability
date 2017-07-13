@@ -1,0 +1,7 @@
+ldak=/home/cnieverg/gctam/ldak5.linux.fast
+
+chr=$PBS_ARRAYID
+
+$ldak --calc-kins-direct kinships_$chr --bfile grm/alldata_m$chr --weights sections_"$chr"/weights.all --power -0.25
+ 
+ 

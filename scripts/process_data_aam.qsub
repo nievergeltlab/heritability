@@ -1,0 +1,47 @@
+#!/bin/bash
+#PBS -V
+
+while getopts m:w: option
+do
+  case "${option}"
+    in
+      m) resultsin=${OPTARG};;
+      w) working_dir=${OPTARG};;
+    esac
+done
+
+module load plink2
+
+study=$(awk -v lineno=$PBS_ARRAYID '{if (NR == lineno) print }' $resultsin )
+
+sname=$(echo $study | awk 'BEGIN{FS="_"}{print $1}')
+
+ mkdir "$TMPDIR"/metax/
+
+
+ echo "Unzipping $sname, file called $study"
+ cp $study "$TMPDIR"/metax/.
+ rm $study 
+ cd "$TMPDIR"/metax/
+ tar xvzf $study --strip=5
+
+ echo "Listing all files to "$sname"_bimfiles.txt"
+
+ echo "Reducing filesizes in PLINK" 
+  for chr in {1..22}
+  do
+   ls *$sname* | grep .bed | sed 's/.bed//g'  | grep chr"$chr"_ | awk '{print $1".bed",$1".bim",$1".fam"}' > "$sname"_chr"$chr".mergelist
+   cp "$sname"_chr"$chr".mergelist "$working_dir"/.
+   /home/cnieverg/ricopili/plink2beta335/plink --geno 0.02 --maf 0.01 --allow-no-sex --merge-list "$sname"_chr"$chr".mergelist --keep /home/cnieverg/gctam/aams.subs --make-bed --out "$working_dir"/"$sname"_b"$chr" &>  "$working_dir"/"$sname"_b"$chr".mlog  
+  done
+
+  echo "$sname" is done! Check PLINK data to make sure everything is in order.
+
+  #for file in $(cat "$sname"_chr"$chr".mergelist)
+  #do
+  # rm -f $file
+  #done
+#rm -f "$TMPDIR"/metax/$study
+
+
+

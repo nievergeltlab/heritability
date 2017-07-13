@@ -1,0 +1,10 @@
+#!/bin/bash
+#PBS -V
+
+chr=$PBS_ARRAYID
+
+/home/cnieverg/gctam
+for chr in {1..22}
+do
+ /home/cnieverg/gctam/plink --bfile grm/alldata_m"$chr" --filter-females --allow-no-sex --make-bed --make-grm-bin --out grmf/alldata_m"$chr"_females
+done

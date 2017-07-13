@@ -1,0 +1,24 @@
+#!/bin/bash
+#PBS -V
+
+while getopts k:o:d:p:c:u: option
+do
+  case "${option}"
+    in
+      k) keep=${OPTARG};;
+      o) output=${OPTARG};;
+      d) outdir=${OPTARG};;
+      p) pheno=${OPTARG};;
+      c) covar=${OPTARG};;
+      u) chrom=${OPTARG};;
+    esac
+done
+
+plink="/home/cnieverg/gctam/plink"
+
+j=$chrom
+
+echo $j $chrom
+
+  $plink --bfile grm/alldata_m"$j" --logistic --chr $j  --ci 0.95 --keep $keep  --pheno $pheno --covar $covar --hide-covar --out "$outdir"/"$output"_chr"$j"_TEST # &
+  # echo $i $j

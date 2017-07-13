@@ -1,0 +1,17 @@
+#!/bin/bash
+#PBS -V
+
+ldak=/home/cnieverg/gctam/ldak5.linux.fast
+
+
+#List all pruned kinship matrices
+#ls prune_*.grm.bin | sed 's/.grm.bin//g' > pruned_grm.list
+
+#Merge all pruned kinship matrices
+#$ldak --add-grm pruned_kinship  --mgrm pruned_grm.list --same-data NO
+
+#Prune out those related > minimum related, retaining cases, and keeping the GWAS subjects 
+$ldak --filter pruneA_v2 --grm pruned_kinship --pheno retain_cases.pheno --keep mds_covfiles/eur_gwas.subjects
+
+#Get first 20 PCs
+$ldak --pca pruned_kinship --grm pruned_kinship --axes 20 --keep pruneA_v2.keep

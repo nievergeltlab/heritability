@@ -1,0 +1,516 @@
+#LDAK, GCTA, BOLT LMM, and LDSC heritability estimates
+#Also code to perform a mega analysis
+
+
+wd=$(pwd) #Set a working directory 
+
+###Get list of subject IDs from each GWAS dataset
+
+#List all GWAS datasets, extract .subjects files
+    ls /archive/maihofer/*qc* > archive_files.txt 
+    mkdir subject_files ; cd subject_files
+    for file in $(cat ../archive_files.txt)
+    do
+        echo $file
+        tar xvzf $file --wildcards "*.subjects" --strip=2
+    done
+
+#Combine all subject files into a single list 
+ cat *.subjects > allsubjects.subs  #This will combine all extracted subject files
+ cat /home/cnieverg/gctam/subject_files/aams/*.subjects > aams.subs #If you put a given ancestry into a specific directory, this will make a list from that ancestry
+
+ 
+###Process genotype data
+
+#In the working directory, put all best guess genotype data files (compressed in .tgz format)
+
+#List all .tgz files to make a study list 
+ ls *.tgz | grep -v nss1 > studylist.txt
+ njobs=$(wc -l studylist.txt | awk '{print $1}')
+
+
+#Filter each dataset to non-monomorphic markers of good quality
+ qsub -t1-$njobs -l walltime=02:00:00 process_data.qsub -d $wd -e errandout/ -o errandout/ -F "-m studylist.txt -w /home/cnieverg/gctam/bychr"
+
+    #Special handling to filter STARRS data, which was split up into many tgz files. redo.txt is a list of STARRS input files. 
+     qsub -t1 -l walltime=04:00:00 process_data_starrs.qsub -d $wd -e errandout/ -o errandout/ -F "-m redo.txt -w /home/cnieverg/gctam/bychr"
+
+#Merge all datasets
+ qsub -t1-22  -l walltime=02:00:00 process_data_merge.qsub -e errandout/ -o errandout/ -F "-w /home/cnieverg/gctam/grm"
+
+ 
+###BOLT analysis
+
+#LD prune all data
+ qsub  -l walltime=00:20:00 ld_prune_data.qsub -e errandout/ -o errandout/ 
+
+#Combine all LD pruned datasets
+ ls /home/cnieverg/gctam/grm/alldata_m*_prune.bed | sed 's/.bed//g' | awk '{print $1".bed",$1".bim",$1".fam"}' > pruned_data.mergelist
+ ./plink --merge-list pruned_data.mergelist --make-bed --allow-no-sex --out /home/cnieverg/gctam/grm/pruned_alldata
+
+#Calculate relatedness (IBD)
+ qsub  -l walltime=02:00:00 global_related.qsub -e errandout/ -o errandout/  #Currently set to show > 5% relateds (for GWAS was at .2)
+
+#Remove relateds from LD pruned data
+ cat /home/cnieverg/gctam/grm/*.genome.* | awk '{print $3,$4}' > /home/cnieverg/gctam/grm/related.list
+ ./plink --bfile /home/cnieverg/gctam/grm/pruned_alldata --remove  /home/cnieverg/gctam/grm/related.list --make-bed --allow-no-sex --out /home/cnieverg/gctam/grm/pruned_alldata_norel
+
+#Subset LD pruned data by gender
+ ./plink --bfile /home/cnieverg/gctam/grm/pruned_alldata_norel --filter-females --make-bed --out /home/cnieverg/gctam/grm/pruned_alldata_norel_females
+ ./plink --bfile /home/cnieverg/gctam/grm/pruned_alldata_norel --filter-males --make-bed --out /home/cnieverg/gctam/grm/pruned_alldata_norel_males
+
+#Perform BOLT analysis (clearly I just need to make a new, more parameterized script)
+ qsub  -l walltime=02:00:00 bolt2.qsub -e errandout/ -o errandout/ 
+ qsub  -l walltime=02:00:00 bolt2_m.qsub -e errandout/ -o errandout/ #males
+ qsub  -l walltime=02:00:00 bolt2_f.qsub -e errandout/ -o errandout/  #females
+
+
+###LDAK steps
+
+##Identify related subjects and calculate PCs
+
+#Get a list of random subjects, for determining weightings, LD between markers, etc
+  #awk '{print $1,$2}' grm/alldata_m22.fam | sort -R | head -n 10000 > random_10000.subjects
+  
+  
+#Prune each chromosome. Make kinship based on pruned chromosomes. 
+  qsub -t1-22 -l walltime=00:30:00 scripts/ldak_mgrm_related.qsub -d $wd -e errandout/ -o errandout/ 
+
+#Get rid of the  | | alleles (this is an LDAK bug, where markers that have multi-allelic names for A1 and A2 cause them to both get named |)
+    for i in {1..22}
+    do
+     #mv  prune_"$i".grm.details prune_"$i".grm.details.bk
+     sed 's/| |/A |/g' prune_"$i".grm.details.bk > prune_"$i".grm.details
+    done
+
+
+#Merge kinship matrices, filter out relateds, calculate PCA. Final pruned subject list will be used for analysis
+  qsub -l walltime=04:00:00 scripts/ldak_mgrm_pca.qsub -d $wd -e errandout/ -o errandout/ #Filter out all subjects with relationship > min observed kinship
+  qsub -l walltime=04:00:00 scripts/ldak_mgrm_pca_2pct.qsub -d $wd -e errandout/ -o errandout/ #Only filter out GWAS subjects, i.e. > 20 percent relatedness within strudy
+
+
+##PTSD phenotype and covariates
+ R
+ 
+ #PCA results from LDAK. Uncomment based on if you want all related (pruned_kinship.vect) or 20% related removed
+ #pca <- read.table('pruned_kinship.vect', header=F,stringsAsFactors=F)
+  pca <- read.table('pruned_kinship_20pct.vect', header=F,stringsAsFactors=F)
+ 
+ names(pca)[1:7] <- c("FID","IID","PC1","PC2","PC3","PC4","PC5")
+ pca <- pca[,1:7]
+ usable <- subset(pca,select=c(FID,IID))
+ 
+ #plot(pca[,3],pca[,4])
+ 
+ pheno <- read.csv('phenotypes/freeze_all_qced_pheno_covs_v2.csv',header=T,stringsAsFactors=F)
+ names(pheno)[1] <- "FID"
+ #Only take phenotyped subjects with PCA values
+ 
+ pheno <- subset(pheno,Pheno_fix %in% c(1,2))
+ pheno <- merge(pheno,usable,by=c("FID","IID"))
+ 
+ 
+#Write out the phenotype now. Be sure to name output based on input files
+ # write.table(subset(pheno,select=c(FID,IID,Pheno_fix)),"phenotypes/ptsd_20pct.pheno",row.names=F,quote=F)
+ # write.table(subset(pheno,Gender == 1 & included_m ==1 , select=c(FID,IID,Pheno_fix)),"phenotypes/malptsd_nomega_20pct.pheno",row.names=F,quote=F)
+ # write.table(subset(pheno,Gender == 2 & included_f == 1 ,  select=c(FID,IID,Pheno_fix)),"phenotypes/femptsd_nomega_20pct.pheno",row.names=F,quote=F)
+ 
+
+ 
+ 
+ males <- subset(pheno,Gender == 1 & included_m ==1 )
+ females <- subset(pheno,Gender == 2 & included_f == 1 )
+ table(males$Pheno_fix)
+ table(females$Pheno_fix)
+ table(pheno$Pheno_fix)
+
+
+ #Make model matrices, skip intercept
+ alldata_model <- model.matrix (~ Study, data= pheno)[,-1]
+ femdata_model <- model.matrix (~ Study, data= females)[,-1]
+ maldata_model <- model.matrix (~ Study, data= males)[,-1]
+ 
+ pheno2 <- cbind(pheno[,-c(3:7)],alldata_model)
+ males2 <- cbind(males[,-c(3:7)],maldata_model)
+ females2 <- cbind(females[,-c(3:7)],femdata_model)
+
+ for (i in 3:dim(males2)[2])
+ {
+  print(table(males2[,i]))
+ }
+ 
+#Write out the covariates
+ dat <-  merge(pheno2,pca,by=c("FID","IID"))
+ write.table(dat,"phenotypes/allstudies_pca_20pct.cov",row.names=F,quote=F)
+ 
+ datm <-  merge(males2,pca,by=c("FID","IID"))
+ write.table(datm,"phenotypes/malstudies_pca_nomega_20pct.cov",row.names=F,quote=F)
+ 
+ datf <-  merge(females2,pca,by=c("FID","IID"))
+ write.table(datf,"phenotypes/femstudies_pca_nomega_20pct.cov",row.names=F,quote=F)
+
+#Write just the PCs 
+ write.table(pca,'phenotypes/allstudies_pca_20pct_nostudy.cov',row.names=F,quote=F)
+
+ q("no")
+
+
+##Prepare weights for LDAK
+#Split genome into areas to weight. Using 10K random subjects to derive weightings
+  qsub -t1-22 -l walltime=02:00:00 scripts/ldak_weights.qsub -d $wd -e errandout/ -o errandout/ 
+
+#Calculate weightings
+ qsub -t1-22 -l walltime=00:05:00 scripts/ldak_create_sections.qsub -d $wd -e errandout/ -o errandout/ 
+
+#Join weightings
+for chr in {1..22}
+do
+  ./ldak5.linux.fast --join-weights sections_$chr --bfile grm/alldata_m$chr
+done
+
+##Calculate kinships
+
+#Cut (partition) by chromosome. 
+for chr in {1..22}
+do
+ ./ldak5.linux.fast --cut-kins kinships_$chr --bfile grm/alldata_m$chr --by-chr YES
+done
+  
+#Calculate kinship for each chromosome
+ #Weighted. Out of date, based on indirect kinship calculation
+  qsub -t1-22 -l walltime=00:30:00 scripts/ldak_kinship.qsub -d $wd -e errandout/ -o errandout/ 
+ #Unweighted (GCTA). This script is more up to date, you can calculate direct kinship with this data easily - update other script based on this one
+  qsub -t1-6 -l walltime=02:00:00 scripts/ldak_kinship_gcta.qsub -d $wd -e errandout/ -o errandout/
+
+#Hack the rm.details files to fix | | error. Write a list of GRM files.
+ #The program codes long alleles (more than 1 character) as |. If there are two such ones, it will code it | |, which is monomorphic coding
+ #Be sure to change input file names, as I did this for a gcta and ldak grm
+for i in {1..22}
+do
+
+ if [ ! -f gcta_kinships_"$i".grm.details.bk ] 
+ then
+  mv  gcta_kinships_"$i".grm.details gcta_kinships_"$i".grm.details.bk
+ fi
+ sed 's/| |/A |/g' gcta_kinships_"$i".grm.details.bk > gcta_kinships_"$i".grm.details
+ 
+ #Write GRM name to a list file, to be merged
+ echo gcta_kinships_"$i" >> gcta_grm.list 
+
+done
+
+#Merge GRMs into entire autosome GRM (inputs: a GRM list and output file name)
+ qsub -l walltime=02:00:00 scripts/ldak_mgrm.qsub -d $wd -e errandout/ -o errandout/ -F "-o gcta_grm -g gcta_grm.list "
+
+
+##Do association analysis  
+
+qsub -l walltime=02:00:00 scripts/ldak_h2.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/ptsd.pheno -g gcta_grm -c phenotypes/allstudies_pca.cov -r NO -k pruneA_v2.keep -o ldak_results/gcta_norel_uncon_prev -z 0.08"
+qsub -l walltime=02:00:00 scripts/ldak_h2.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/ptsd.pheno -g kinships -c phenotypes/allstudies_pca.cov -r NO -k pruneA_v2.keep -o ldak_results/ldak_norel_uncon_prev -z 0.08"
+
+#unconstrained reml
+qsub -l walltime=02:00:00 scripts/ldak_h2.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/ptsd.pheno -g kinships -c phenotypes/allstudies_pca.cov -r YES -k pruneA_v2.keep -o ldak_results/ldak_norel_con "
+
+#Females
+qsub -l walltime=01:00:00 scripts/ldak_h2.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/femptsd_nomega.pheno -g gcta_grm -c phenotypes/femstudies_pca_nomega.cov -r NO -k pruneA_v2.keep -o ldak_results/gcta_norel_uncon_fem_prev_nomega -z 0.11"
+qsub -l walltime=01:00:00 scripts/ldak_h2.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/femptsd_nomega.pheno -g kinships -c phenotypes/femstudies_pca_nomega.cov -r NO -k pruneA_v2.keep -o ldak_results/ldak_norel_uncon_fem_prev_nomega -z 0.11"
+
+
+#Males
+qsub -l walltime=01:00:00 scripts/ldak_h2.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/malptsd_nomega.pheno -g gcta_grm -c phenotypes/malstudies_pca_nomega.cov -r NO -k pruneA_v2.keep -o ldak_results/gcta_norel_uncon_mal_prev_nomega -z 0.05"
+qsub -l walltime=01:00:00 scripts/ldak_h2.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/malptsd_nomega.pheno -g kinships -c phenotypes/malstudies_pca_nomega.cov -r NO -k pruneA_v2.keep -o ldak_results/ldak_norel_uncon_mal_prev_nomega -z 0.05"
+
+
+
+###MEGA analysis
+
+#List of subjects from the main GWAS
+awk '{print $1,$2}' phenotypes/ptsd_20pct.pheno > phenotypes/ptsd_20pct.keep
+
+#Do association analysis
+qsub -t6 -l walltime=08:00:00 scripts/plink.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/ptsd_20pct.pheno -c phenotypes/allstudies_pca_20pct.cov -k phenotypes/ptsd_20pct.keep -o all_norel_20pct -d plink_results"
+qsub -t1-22 -l walltime=05:00:00 scripts/plink.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/malptsd_nomega_20pct.pheno -c phenotypes/malstudies_pca_nomega_20pct.cov -k phenotypes/ptsd_20pct.keep -o mal_norel_nomega_20pct -d plink_results"
+qsub -t1-22 -l walltime=05:00:00 scripts/plink.qsub -d $wd -e errandout/ -o errandout/ -F "-p phenotypes/femptsd_nomega_20pct.pheno -c phenotypes/femstudies_pca_nomega_20pct.cov -k phenotypes/ptsd_20pct.keep -o fem_norel_nomega_20pct -d plink_results"
+
+#Get AFs (the per study meta-analysis code I have is a better version of this, incorporates it into PLINK analysis code. Adapt that in the future)
+for i in {1..22}
+do
+ bash scripts/plink_freq.qsub -k phenotypes/ptsd_20pct.pheno    -o all_norel_20pct -d plink_results -u $i
+ bash scripts/plink_freq.qsub -k phenotypes/malptsd_nomega_20pct.pheno -o mal_norel_nomega_20pct  -d plink_results -u $i
+ bash scripts/plink_freq.qsub -k phenotypes/femptsd_nomega_20pct.pheno -o fem_norel_nomega_20pct  -d plink_results -u $i
+ 
+done
+
+#Concatenate results
+cd /home/cnieverg/gctam/plink_results/ 
+
+for i in {1..22}
+do
+ paste all_norel_20pct_chr"$i".assoc.logistic all_norel_20pct_chr"$i"_fre.frq | awk '{print $1,$2,$3,$4,$16,$5,$6,$17,$7,$8,$9,$10,$11,$12}' > all_norel_20pct_chr"$i".assoc.logistic_frq
+ paste mal_norel_nomega_20pct_chr"$i".assoc.logistic mal_norel_nomega_20pct_chr"$i"_fre.frq | awk '{print $1,$2,$3,$4,$16,$5,$6,$17,$7,$8,$9,$10,$11,$12}' > mal_norel_nomega_20pct_chr"$i".assoc.logistic_frq
+ paste fem_norel_nomega_20pct_chr"$i".assoc.logistic fem_norel_nomega_20pct_chr"$i"_fre.frq | awk '{print $1,$2,$3,$4,$16,$5,$6,$17,$7,$8,$9,$10,$11,$12}' > fem_norel_nomega_20pct_chr"$i".assoc.logistic_frq
+done
+
+cat all_norel_20pct_chr*.assoc.logistic_frq | sort -g -k 14 | grep -v NA | awk '{if (NR == 1 || $14 != "P") print}' > all_norel_20pct_allchr.assoc.logistic
+cat mal_norel_nomega_20pct_chr*.assoc.logistic_frq | sort -g -k 14 | grep -v NA | awk '{if (NR == 1 || $14 != "P") print}' > mal_norel_nomega_20pct_allchr.assoc.logistic
+cat fem_norel_nomega_20pct_chr*.assoc.logistic_frq | sort -g -k 14 | grep -v NA | awk '{if (NR == 1 || $14 != "P") print}' > fem_norel_nomega_20pct_allchr.assoc.logistic
+
+
+#Prepare results for LDSC
+module load ldsc 
+
+munge_sumstats.py --N-col NMISS --sumstats all_norel_20pct_allchr.assoc.logistic --out allstudies_20pct_munge
+munge_sumstats.py --N-col NMISS --sumstats mal_norel_nomega_20pct_allchr.assoc.logistic --out malstudies_nomega_20pct_munge
+munge_sumstats.py --N-col NMISS --sumstats fem_norel_nomega_20pct_allchr.assoc.logistic --out femstudies_nomega_20pct_munge
+
+#Do LDSC
+ldsc.py \
+--h2 allstudies_20pct_munge.sumstats.gz \
+--ref-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+--w-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+--samp-prev 0.274 \
+--pop-prev 0.08 \
+--out allstudies_20pct_int
+
+ldsc.py \
+--h2 femstudies_nomega_20pct_munge.sumstats.gz \
+--ref-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+--w-ld-chr  "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+--samp-prev 0.40 \
+--pop-prev 0.11 \
+--no-intercept \
+--out femstudies_20pct_nomega_noint
+
+
+ldsc.py \
+--h2 malstudies_nomega_20pct_munge.sumstats.gz \
+--ref-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+--w-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+--samp-prev 0.211 \
+--pop-prev 0.05 \
+--no-intercept \
+--out malstudies_nomega_20pct_noint
+
+
+###Meta analysis of best guess data
+R
+ 
+ #PCA results from LDAK
+ pca <- read.table('pruned_kinship_20pct.vect', header=F,stringsAsFactors=F)
+ 
+ names(pca)[1:7] <- c("FID","IID","PC1","PC2","PC3","PC4","PC5")
+ pca <- pca[,1:7]
+ usable <- subset(pca,select=c(FID,IID))
+ 
+ #plot(pca[,3],pca[,4])
+ 
+ pheno <- read.csv('phenotypes/freeze_all_qced_pheno_covs_v2.csv',header=T,stringsAsFactors=F)
+ names(pheno)[1] <- "FID"
+ #Only take phenotyped subjects with PCA values
+ 
+ pheno <- subset(pheno,Pheno_fix %in% c(1,2))
+ pheno <- merge(pheno,usable,by=c("FID","IID"))
+
+#Complicated code to only produce phenotype data for studies included in the main analysis
+ inc=1
+    for( study in unique(pheno$Study))
+    {
+      write.table(subset(pheno,Study == study, select=c(FID,IID,Pheno_fix)),paste("pheno_keeplist/ptsd_20pct_study",inc,".pheno",sep=""),row.names=F,quote=F)
+      
+      if(dim(subset(pheno,Study == study & Gender == 1 & included_m == 1))[1] > 1)
+      {
+          if(subset(pheno,Study == study & Gender == 1 & included_m == 1)$included_m[1] == 1)
+          { 
+           write.table(subset(pheno,Study == study & Gender == 1 & included_m ==1 , select=c(FID,IID,Pheno_fix)),paste("pheno_keeplist/malptsd_20pct_study",inc,".pheno",sep=""),row.names=F,quote=F)
+          }
+      }
+      if(dim(subset(pheno,Study == study & Gender == 2 & included_f == 1))[1] > 1)
+      {
+      if(subset(pheno,Study == study & Gender == 2 & included_f == 1)$included_f[1] == 1)
+          {
+           write.table(subset(pheno,Study == study & Gender == 2 & included_f == 1 ,  select=c(FID,IID,Pheno_fix)),paste("pheno_keeplist/femptsd_20pct_study",inc,".pheno",sep=""),row.names=F,quote=F)
+          }
+      }
+     inc=inc+1
+    }
+
+ q("no")
+ #Should DNHS be included?? I think this gave me a discrepancy in N, namely I used a sort feature to include males/females, but i used the AAM data to deicde it for dnhs
+ 
+#Association analysis
+qsub -t1-22 -l walltime=05:00:00 scripts/plink_meta.qsub -d $wd -e errandout/ -o errandout/ -F "-t ptsd    -c mds_covfiles/eur_pca.cov -k phenotypes/ptsd_20pct.keep -o all_norel_20pct -d plink_meta"
+qsub -t1-22 -l walltime=05:00:00 scripts/plink_meta.qsub -d $wd -e errandout/ -o errandout/ -F "-t malptsd -c mds_covfiles/eur_pca.cov -k phenotypes/ptsd_20pct.keep -o mal_norel_nomega_20pct -d plink_meta"
+qsub -t1-22 -l walltime=05:00:00 scripts/plink_meta.qsub -d $wd -e errandout/ -o errandout/ -F "-t femptsd -c mds_covfiles/eur_pca.cov -k phenotypes/ptsd_20pct.keep -o fem_norel_nomega_20pct -d plink_meta"
+
+#Meta analysis
+
+#Prepare METAL inputs
+echo "
+ MARKERLABEL   SNP
+ ALLELELABELS  A1 A2
+ PVALUELABEL   P 
+ EFFECTLABEL   log(OR)
+ SCHEME STDERR 
+ STDERR SE 
+ GENOMICCONTROL OFF
+ " > plink_meta/metal_header.txt
+ for chr in {1..22}
+ do
+  ls plink_meta/fem_norel_nomega_20pct_chr"$chr"_study*.assoc.logistic_frq | awk '{print "PROCESS "$1}' > plink_meta/fem_norel_20pct_chr"$chr".metabody
+  echo "OUTFILE metal/fem_norel_20pct_chr"$chr"_ .tbl
+  ANALYZE 
+  QUIT " >> plink_meta/fem_norel_20pct_chr"$chr".metabody
+  cat plink_meta/metal_header.txt plink_meta/fem_norel_20pct_chr"$chr".metabody > plink_meta/fem_norel_20pct_chr"$chr".metal_in
+ done 
+  
+#Run METAL
+ qsub -l walltime=03:00:00 scripts/metal.qsub -d $wd -e errandout/ -o errandout/
+ 
+#Combine METAL results
+ cat metal/fem_norel_20pct_chr*_1.tbl | awk '{if (NR == 1 || $4 != "Effect") print}' > metal/fem_norel_20pct_allchr_1.tbl
+ cat metal/mal_norel_20pct_chr*_1.tbl | awk '{if (NR == 1 || $4 != "Effect") print}'> metal/mal_norel_20pct_allchr_1.tbl
+ cat metal/all_norel_20pct_chr*_1.tbl | awk '{if (NR == 1 || $4 != "Effect") print}'> metal/all_norel_20pct_allchr_1.tbl
+   
+#Prepare for LDSC
+   cd metal 
+    munge_sumstats.py --N-cas 10331 --N-con 27047  --sumstats all_norel_20pct_allchr_1.tbl --out allstudies_20pct_bgmeta
+    munge_sumstats.py --N-cas 4819  --N-con 18391 --sumstats mal_norel_20pct_allchr_1.tbl --out malstudies_20pct_bgmeta
+    munge_sumstats.py --N-cas 5222 --N-con 6468 --sumstats fem_norel_20pct_allchr_1.tbl --out femstudies_20pct_bgmeta
+
+
+#Run LDSC  
+    ldsc.py \
+    --h2 allstudies_20pct_bgmeta.sumstats.gz \
+    --ref-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+    --w-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+    --samp-prev 0.274 \
+    --pop-prev 0.08 \
+    --out allstudies_20pct_bgmeta
+
+    ldsc.py \
+    --h2 femstudies_20pct_bgmeta.sumstats.gz \
+    --ref-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+    --w-ld-chr  "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+    --samp-prev 0.40 \
+    --pop-prev 0.11 \
+    --out femstudies_20pct_nomega_bgmeta
+
+    ldsc.py \
+    --h2 malstudies_20pct_bgmeta.sumstats.gz \
+    --ref-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+    --w-ld-chr "/home/cnieverg/report_data/testrun/results_cat/eur_w_ld_chr/" \
+    --samp-prev 0.211 \
+    --pop-prev 0.05 \
+    --out malstudies_nomega_20pct_bgmeta
+
+ 
+ 
+
+###Write out a list of just best guess SNPs, to reestimate heritability in this subset
+awk '{print $2}' fem_norel_nomega_allchr.assoc.logistic  | sort -k1b,1 > /home/cnieverg/report_data/testrun/results_cat/fem_norel_allchr.assoc.snplist
+awk '{print $2}' all_norel_allchr.assoc.logistic | sort -k1b,1 > /home/cnieverg/report_data/testrun/results_cat/all_norel_allchr.assoc.snplist
+awk '{print $2}' mal_norel_nomega_allchr.assoc.logistic | sort -k1b,1  > /home/cnieverg/report_data/testrun/results_cat/mal_norel_allchr.assoc.snplist
+
+######
+######
+#Mostly test code below
+
+## Investigate PCA...
+
+ #PCA results from LDAK
+ pca <- read.table('pruned_kinship.vect', header=F,stringsAsFactors=F)
+ names(pca)[1:7] <- c("FID","IID","PC1","PC2","PC3","PC4","PC5")
+ pca <- pca[,1:7]
+ usable <- subset(pca,select=c(FID,IID))
+ 
+ pheno <- read.csv('phenotypes/freeze_all_qced_pheno_covs.csv',header=T,stringsAsFactors=F)
+ names(pheno)[1] <- "FID"
+ #Only take phenotyped subjects with PCA values
+ 
+ dm <- merge(pheno,pca,by=c("FID","IID"))
+ dm$study_col <- colors()[as.numeric(as.factor(dm$Study))]
+ 
+ plot(dm$PC1,dm$PC5,col=dm$study_col,pch=16)
+ 
+ 
+ identify(dm$PC1,dm$PC2,dm$Study)
+ 
+ text(dm$Study,dm$PC1,dm$PC2)
+ 
+  plot(dm$PC1,dm$PC3,col=dm$study_col,pch=16) #HLA region PC
+  
+ plot(dm$PC1,dm$PC4,col=dm$study_col,pch=16)
+ identify(dm$PC1,dm$PC5,dm$Study)
+ 
+### GCTA
+
+#Filter data to just females
+for chr in {1..22}
+do
+ ./plink --bfile grm/alldata_m"$chr" --filter-females --allow-no-sex --make-bed --make-grm-bin --out grmf/alldata_m"$chr"_females
+done
+
+qsub -l walltime=01:00:00 male_female_grm.pbs
+
+
+qsub  -l walltime=02:00:00 merge_gcta.qusb -e errandout/ -o errandout/ 
+
+
+ls grm/laramie*.N.bin | sed 's/.grm.N.bin//g' > laramie_grm.txt
+
+
+./gcta64 --mgrm-bin  laramie_grm.txt --make-grm-bin --out grm/all_laramie
+
+
+#
+./plink --bfile /home/cnieverg/gctam/grm/pruned_alldata_norel --pca header tabs --out grm/unrelated_pruned_pca
+
+
+#Mega analysis todo
+#set number of blocks
+#Add PCA covariate (can estimate from ld pruned data?)
+#Perform analysis
+
+
+for chr in {1..22}
+do 
+ ./plink --bfile /home/cnieverg/gctam/grm/alldata_m"$chr" --pheno ss_fixed.pheno2.txt --pheno-name  Pheno_fix   --covar allstudies_categories.cov --logistic --ci 0.95 --out pres/alldata_chr"$chr"
+done
+
+./plink --bfile /home/cnieverg/gctam/grm/alldata_m"$chr" --write-var-ranges --covar allstudies_numeric.cov --dummy-coding --write-covar --out allstudies_categories
+
+
+./plink --bfile /home/cnieverg/gctam/grm/alldata_m"$chr" --write-var-ranges 100 --out testvar
+
+
+##Test code
+
+
+touch gcta.merge
+for rep in {1..22}
+do
+ echo /home/cnieverg/gctam/grm/alldata_m"$rep" >> gcta.merge
+done
+
+/home/cnieverg/gctam/gcta64 --mgrm-bin /home/cnieverg/gctam/gcta.merge --grm-cutoff 0.2 --make-grm  --out /home/cnieverg/gctam/grm/total_cut02
+
+###Combine datasets step for different data subset, example
+ qsub -t1-22  -l walltime=01:00:00 process_data_merge_laramie.qsub -e errandout/ -o errandout/ -F "-w /home/cnieverg/gctam/grm"
+
+ 
+###Process genotype data for AAMs
+
+#List all .tgz files to make a study list (Except NSS1, must be handled alone!)
+ ls *.tgz | grep -v nss1 > studylist.txt
+ njobs=$(wc -l studylist.txt | awk '{print $1}')
+
+
+#Filter data to non-monomorphic markers
+ qsub -t1-$njobs -l walltime=02:00:00 process_data_aam.qsub -d $wd -e errandout/ -o errandout/ -F "-m studylist.txt -w /home/cnieverg/gctam/bychr"
+
+#Filter STARRS data, which was split up into many files
+ qsub -t1 -l walltime=04:00:00 process_data_starrs_aam.qsub -d $wd -e errandout/ -o errandout/ -F "-m redo.txt -w /home/cnieverg/gctam/bychr"
+
+#Combine all datasets (Can make GRMs here to match Laramie)
+ qsub -t1-22  -l walltime=00:05:00 process_data_merge_aam.qsub -e errandout/ -o errandout/ -F "-w /home/cnieverg/gctam/grm"
+

@@ -1,0 +1,32 @@
+#!/bin/bash
+#PBS -V
+
+while getopts w: option
+do
+  case "${option}"
+    in
+      w) working_dir=${OPTARG};;
+    esac
+done
+
+plinkl=/home/cnieverg/gctam/plink
+chr="$PBS_ARRAYID"
+mkdir "$TMPDIR"/gct
+sname=laramie
+
+
+
+
+   ls /home/cnieverg/gctam/bychr | grep -E "mrsc|coga|cogb|fscd|gsdc|nhs2|onga|gtpc" | grep m"$chr"\.bed | sed 's/.bed//g'  | awk '{print $1".bed",$1".bim",$1".fam"}' > "$TMPDIR"/gct/"$sname"_"$chr".mergelist
+   for files in $(ls /home/cnieverg/gctam/bychr | grep -E "mrsc|coga|cogb|fscd|gsdc|nhs2|onga|gtpc" |  grep   -F m"$chr"\. ) 
+   do
+    cp /home/cnieverg/gctam/bychr/"$files" "$TMPDIR"/gct/.
+   done
+
+   cp "$TMPDIR"/gct/"$sname"_"$chr".mergelist "$working_dir"/.
+
+   cd  "$TMPDIR"/gct
+
+   $plinkl --maf 0.01 --geno 0.02  --allow-no-sex --merge-list "$TMPDIR"/gct/"$sname"_"$chr".mergelist  --make-grm-bin --make-bed --out "$working_dir"/"$sname"_m"$chr" &>  "$working_dir"/"$sname"_m"$chr".mlog  
+
+

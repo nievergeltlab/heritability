@@ -1,0 +1,12 @@
+#!/bin/bash
+#PBS -V
+
+ldak=/home/cnieverg/gctam/ldak5.linux.fast
+
+chr=$PBS_ARRAYID
+
+#Prune each chromosome. Make kinship based on pruned chromosomes. 
+
+# $ldak --thin prune_"$chr" --bfile grm/alldata_m"$chr" --window-kb 1000 --window-prune 0.2 --keep random_10000.subjects
+ $ldak --calc-kins-direct prune_"$chr"  --bfile grm/alldata_m"$chr" --extract prune_"$chr".in --ignore-weights YES --power -0.25
+

@@ -1,0 +1,8 @@
+#!/bin/bash
+#PBS -V
+
+
+cp  /home/cnieverg/gctam/grm/pruned_alldata.* "$TMPDIR"/.
+
+cd "$TMPDIR"
+/home/cnieverg/gctam/bolt --bfile pruned_alldata --phenoUseFam --reml > /home/cnieverg/gctam/boltres/boltmodel.txt

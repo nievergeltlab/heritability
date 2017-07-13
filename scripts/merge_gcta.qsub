@@ -1,0 +1,15 @@
+#!/bin/bash
+#PBS -V
+
+
+cd /home/cnieverg/gctam
+
+#ls grm/laramie*.N.bin | sed 's/.grm.N.bin//g' > laramie_grm.txt
+
+
+#./gcta64  --mgrm-bin  laramie_grm.txt --grm-cutoff  0.025 --make-grm-bin --out grm/all_laramie
+ 
+./gcta64  --mgrm-bin  laramie_grm.txt --pca  5 --make-grm-bin --out grm/all_laramie_nofilter
+
+
+#./gcta64 --reml --grm grm/all_laramie --pheno /home/cnieverg/gctam/ss_fixed.pheno2.txt --covar larm_studies_cov_v2.pheno --prevalence   0.09 --out boltres/gcta_laramie

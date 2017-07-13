@@ -1,0 +1,30 @@
+while getopts k:o:d:c:t: option
+do
+  case "${option}"
+    in
+      k) keep=${OPTARG};;
+      o) output=${OPTARG};;
+      d) outdir=${OPTARG};;
+      c) covar=${OPTARG};;
+      t) type=${OPTARG};;
+    esac
+done
+
+plink="/home/cnieverg/gctam/plink"
+
+j=$PBS_ARRAYID
+ncommands=22
+nodesize=6
+nodeuse=$(($nodesize ))
+totjobs=$(( ($ncommands + $nodeuse - 1 ) / $nodeuse ))
+
+
+  ls pheno_keeplist | grep ^"$type" > phenolist_"$type".txt
+  for pheno in $(cat phenolist_"$type".txt)
+  do
+   studyname=$(echo $pheno | awk 'BEGIN{FS="_"}{print $3}' | sed 's/.pheno//g')
+   $plink --bfile grm/alldata_m"$j" --logistic --ci 0.95 --keep $keep  --pheno pheno_keeplist/"$pheno" --covar $covar --hide-covar --out "$TMPDIR"/"$output"_chr"$j"_"$studyname" # &
+   $plink --bfile grm/alldata_m"$j" --keep  pheno_keeplist/"$pheno" --freq --out "$TMPDIR"/"$output"_chr"$j"_"$studyname"_fre # &
+   paste "$TMPDIR"/"$output"_chr"$j"_"$studyname".assoc.logistic "$TMPDIR"/"$output"_chr"$j"_"$studyname"_fre.frq | awk '{print $1,$2,$3,$4,$16,$5,$6,$17,$7,$8,$9,$10,$11,$12}' > "$outdir"/"$output"_chr"$j"_"$studyname".assoc.logistic_frq
+ 
+  done

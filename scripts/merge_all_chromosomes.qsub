@@ -1,0 +1,29 @@
+#!/bin/bash
+#PBS -V
+
+while getopts w: option
+do
+  case "${option}"
+    in
+      w) working_dir=${OPTARG};;
+    esac
+done
+
+plinkl=/home/cnieverg/gctam/plink
+chr="$PBS_ARRAYID"
+mkdir "$TMPDIR"/gct
+sname=alldata
+
+   ls /home/cnieverg/gctam/grm | grep -E alldata_m[0-9]\{1,\}.bed | sed 's/.bed//g'  | awk '{print $1".bed",$1".bim",$1".fam"}' > "$TMPDIR"/gct/alldata_allchr.mergelist
+   for files in $(ls /home/cnieverg/gctam/grm | grep -E alldata_m[0-9]\{1,\} | grep -v prune) 
+   do
+    cp /home/cnieverg/gctam/grm/"$files" "$TMPDIR"/gct/.
+   done
+
+   cp "$TMPDIR"/gct/alldata_allchr.mergelist "$working_dir"/.
+
+   cd  "$TMPDIR"/gct
+
+   $plinkl --allow-no-sex --merge-list "$TMPDIR"/gct/alldata_allchr.mergelist --make-bed --out "$working_dir"/"$sname"_mall &>  "$working_dir"/"$sname"_mall.mlog  
+
+

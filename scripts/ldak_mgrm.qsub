@@ -1,0 +1,20 @@
+#!/bin/bash
+#PBS -V
+
+while getopts g:o: option
+do
+  case "${option}"
+    in
+      g) grmlist=${OPTARG};;
+      o) output=${OPTARG};;
+
+    esac
+done
+
+
+ldak=/home/cnieverg/gctam/ldak5.linux.fast
+
+
+$ldak --add-grm  $output --mgrm $grmlist --same-data NO
+
+ 

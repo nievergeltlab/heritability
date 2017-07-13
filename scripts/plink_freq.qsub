@@ -1,0 +1,43 @@
+#!/bin/bash
+#PBS -V
+
+while getopts k:o:d:u: option
+do
+  case "${option}"
+    in
+      k) keep=${OPTARG};;
+      o) output=${OPTARG};;
+      d) outdir=${OPTARG};;
+      u) chrom=${OPTARG};;
+    esac
+done
+
+plink="/home/cnieverg/gctam/plink"
+
+j=$chrom
+echo $j $chrom
+ncommands=22
+nodesize=6
+nodeuse=$(($nodesize ))
+totjobs=$(( ($ncommands + $nodeuse - 1 ) / $nodeuse ))
+
+
+# for i in $(seq 1 1 $totjobs)
+# do
+ # jstart=$((($i-1)*$nodesize +1))
+ # jstop=$(($i*$nodesize))
+
+ # min=$([ $ncommands -le $jstop ] && echo "$ncommands" || echo "$jstop")
+ # jstop=$min
+ # for j in $(seq $jstart 1 $jstop)
+ # do
+ 
+  $plink --bfile grm/alldata_m"$j" --freq --keep $keep  --out "$outdir"/"$output"_chr"$j"_fre # &
+  # echo $i $j
+ # done
+ # wait #wait for jobs to finish before starting next set
+# done 
+# 2>&1 "$outdir"/"$output"_chr"$j".plog 
+#cp "$TMPDIR"/"$output"_chr"$j".log "$outdir"/"$output"_chr"$j".log
+#cp "$TMPDIR"/"$output"_chr"$j".assoc.logistic "$outdir"/"$output"_chr"$j".assoc.logistic
+#cat "$TMPDIR"/"$output"_chr*.assoc.logistic  > "$outdir"/"$output"

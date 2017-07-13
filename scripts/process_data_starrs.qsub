@@ -1,0 +1,41 @@
+#!/bin/bash
+#PBS -V
+
+while getopts m:w: option
+do
+  case "${option}"
+    in
+      m) resultsin=${OPTARG};;
+      w) working_dir=${OPTARG};;
+    esac
+done
+
+module load plink2
+sname=nss1
+
+ mkdir "$TMPDIR"/metax/
+
+
+ echo "Unzipping $sname, file called $study"
+ cp nss1_bg_v1_oct6_2016_*.tgz  "$TMPDIR"/metax/.
+
+ cd "$TMPDIR"/metax/
+ tar xvzf nss1_bg_v1_oct6_2016_a.tgz  --strip=5
+ tar xvzf nss1_bg_v1_oct6_2016_b.tgz  --strip=5
+ tar xvzf nss1_bg_v1_oct6_2016_c.tgz  --strip=5
+ tar xvzf nss1_bg_v1_oct6_2016_d.tgz  --strip=5
+ tar xvzf nss1_bg_v1_oct6_2016_e.tgz  --strip=5
+
+
+ echo "Listing all files to "$sname"_bimfiles.txt"
+
+ echo "Reducing filesizes in PLINK" 
+  for chr in {1..22}
+  do
+   ls *$sname* | grep .bed | sed 's/.bed//g'  | grep chr"$chr"_ | awk '{print $1".bed",$1".bim",$1".fam"}' > "$sname"_chr"$chr".mergelist
+   cp "$sname"_chr"$chr".mergelist "$working_dir"/.
+   /home/cnieverg/ricopili/plink2beta335/plink --geno 0.02 --maf 0.01 --allow-no-sex --merge-list "$sname"_chr"$chr".mergelist --keep /home/cnieverg/gctam/allsubjects.subs --make-bed --out "$working_dir"/"$sname"_m"$chr" &>  "$working_dir"/"$sname"_m"$chr".mlog  
+  done
+
+  echo "$sname" is done! Check PLINK data to make sure everything is in order.
+

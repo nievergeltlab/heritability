@@ -1,0 +1,27 @@
+#!/bin/bash
+#PBS -V
+
+while getopts p:c:g:r:k:o:z: option
+do
+  case "${option}"
+    in
+      p) pheno=${OPTARG};;
+      c) covar=${OPTARG};;
+      g) grm=${OPTARG};;
+      r) constrain=${OPTARG};;
+      k) keep=${OPTARG};;
+      o) output=${OPTARG};;
+      z) prevalence=${OPTARG};;
+    esac
+done
+
+ldak=/home/cnieverg/gctam/ldak5.linux.fast
+
+if [ $constrain == "NO" ]
+then
+ reml="--constrain NO"
+fi
+
+
+$ldak --reml $output $reml --grm $grm --pheno $pheno --covar $covar --keep $keep --prevalence $prevalence
+

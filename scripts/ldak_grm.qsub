@@ -1,0 +1,5 @@
+#!/bin/bash
+#PBS -V
+
+
+./ldak5.linux.fast --calc-kins-direct prune --bfile grm/pruned_alldata_norel  --ignore-weights YES --power -0.25

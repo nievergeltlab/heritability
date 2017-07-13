@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -V
+
+while getopts k:o:d:p:c: option
+do
+  case "${option}"
+    in
+      k) keep=${OPTARG};;
+      o) output=${OPTARG};;
+      d) outdir=${OPTARG};;
+      p) pheno=${OPTARG};;
+      c) covar=${OPTARG};;
+    esac
+done
+
+plink="/home/cnieverg/gctam/plink"
+
+j=$PBS_ARRAYID
+ncommands=22
+nodesize=6
+nodeuse=$(($nodesize ))
+totjobs=$(( ($ncommands + $nodeuse - 1 ) / $nodeuse ))
+
+
+# for i in $(seq 1 1 $totjobs)
+# do
+ # jstart=$((($i-1)*$nodesize +1))
+ # jstop=$(($i*$nodesize))
+
+ # min=$([ $ncommands -le $jstop ] && echo "$ncommands" || echo "$jstop")
+ # jstop=$min
+ # for j in $(seq $jstart 1 $jstop)
+ # do
+ 
+  $plink --bfile grm/alldata_m"$j" --logistic --ci 0.95 --keep $keep  --pheno $pheno --covar $covar --hide-covar --out "$outdir"/"$output"_chr"$j" # &
+  # echo $i $j
+ # done
+ # wait #wait for jobs to finish before starting next set
+# done 
+# 2>&1 "$outdir"/"$output"_chr"$j".plog 
+
+#cat "$TMPDIR"/"$output"_chr*.assoc.logistic  > "$outdir"/"$output"

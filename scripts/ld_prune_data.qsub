@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -V
+
+while getopts w: option
+do
+  case "${option}"
+    in
+      w) working_dir=${OPTARG};;
+    esac
+done
+
+plinkl=/home/cnieverg/gctam/plink
+
+sname=alldata
+
+
+
+#The .3 is from gusev http://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1003993
+#The 50 5 are from https://data.broadinstitute.org/alkesgroup/BOLT-LMM/
+cd "$TMPDIR"
+
+   for chr in 6 7 10 19 20  # {1..22}
+   do
+    cp /home/cnieverg/gctam/grm/"$sname"_m"$chr".bed "$TMPDIR"/.
+    cp /home/cnieverg/gctam/grm/"$sname"_m"$chr".bim "$TMPDIR"/.
+    cp /home/cnieverg/gctam/grm/"$sname"_m"$chr".fam "$TMPDIR"/.
+
+    $plinkl --bfile "$sname"_m"$chr" --maf 0.01 --geno 0.02  --indep-pairwise 50 5 .3 --allow-no-sex --make-bed --out "$sname"_m"$chr"_prune
+    $plinkl --bfile "$sname"_m"$chr" --allow-no-sex --make-bed --extract "$sname"_m"$chr"_prune.prune.in --out /home/cnieverg/gctam/grm/"$sname"_m"$chr"_prune
+
+   done
+
+
+

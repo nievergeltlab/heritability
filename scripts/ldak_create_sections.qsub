@@ -1,0 +1,28 @@
+ldak="/home/cnieverg/gctam/ldak5.linux.fast"
+
+chr=$PBS_ARRAYID 
+
+ncommands=$(cat sections_"$chr"/section.number)
+
+nodesize=16
+nodeuse=$(($nodesize ))
+totjobs=$(( ($ncommands + $nodeuse - 1 ) / $nodeuse ))
+
+#Increment I in the number of jobs
+#Increment J in the number of 
+for i in $(seq 1 1 $totjobs)
+do
+ jstart=$((($i-1)*16 +1))
+ jstop=$(($i*16))
+
+ min=$([ $ncommands -le $jstop ] && echo "$ncommands" || echo "$jstop")
+ jstop=$min
+ for j in $(seq $jstart 1 $jstop)
+ do
+ 
+  $ldak --calc-weights sections_$chr --bfile grm/alldata_m"$chr"  --keep random_10000.subjects --section $j &
+  echo $i $j
+ done
+ wait #wait for jobs to finish before starting next set
+done
+

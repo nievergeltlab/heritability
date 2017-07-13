@@ -1,0 +1,12 @@
+#!/bin/bash
+#PBS -V
+
+
+cp  /home/cnieverg/gctam/grm/pruned_alldata_norel.* "$TMPDIR"/.
+
+cd "$TMPDIR"
+/home/cnieverg/gctam/bolt --bfile pruned_alldata_norel --phenoFile /home/cnieverg/gctam/ss_fixed.pheno2.txt --phenoCol Pheno_fix  --covarFile /home/cnieverg/gctam/larm_studies_cov_v2.pheno --covarCol Study,gender --reml --remlNoRefine > /home/cnieverg/gctam/boltres/boltmodel_fastreml_norel_newpheno_laramie_wgender.txt
+
+
+
+
